@@ -1,52 +1,72 @@
 [
     {
-        "name": "xdsh",
-        "score": 1230,
-        "distance": 3002
+        "name": "a",
+        "score": 1420,
+        "distance": 3202,
+        "coins": 29,
+        "date": "2026-04-27"
     },
     {
-        "name": "xdsh",
-        "score": 1170,
-        "distance": 3001
+        "name": "a",
+        "score": 1310,
+        "distance": 3202,
+        "coins": 22,
+        "date": "2026-04-27"
     },
     {
-        "name": "shxd",
-        "score": 1150,
-        "distance": 3002
+        "name": "a",
+        "score": 1300,
+        "distance": 3200,
+        "coins": 20,
+        "date": "2026-04-27"
     },
     {
-        "name": "shxd",
-        "score": 1097,
-        "distance": 2860
+        "name": "a",
+        "score": 1270,
+        "distance": 3201,
+        "coins": 20,
+        "date": "2026-04-27"
     },
     {
-        "name": "xdsh",
-        "score": 1060,
-        "distance": 3003
+        "name": "a",
+        "score": 1270,
+        "distance": 3053,
+        "coins": 31,
+        "date": "2026-04-27"
     },
     {
-        "name": "shxd",
-        "score": 905,
-        "distance": 1878
+        "name": "a",
+        "score": 1051,
+        "distance": 3057,
+        "coins": 20,
+        "date": "2026-04-27"
     },
     {
-        "name": "xdsh",
-        "score": 848,
-        "distance": 2844
+        "name": "a",
+        "score": 909,
+        "distance": 2745,
+        "coins": 18,
+        "date": "2026-04-27"
     },
     {
-        "name": "shxd",
-        "score": 774,
-        "distance": 2222
+        "name": "a",
+        "score": 785,
+        "distance": 2727,
+        "coins": 12,
+        "date": "2026-04-27"
     },
     {
-        "name": "xdsh",
+        "name": "a",
+        "score": 666,
+        "distance": 1533,
+        "coins": 18,
+        "date": "2026-04-27"
+    },
+    {
+        "name": "a",
         "score": 650,
-        "distance": 2552
-    },
-    {
-        "name": "xdsh",
-        "score": 486,
-        "distance": 1583
+        "distance": 1450,
+        "coins": 18,
+        "date": "2026-04-27"
     }
 ]

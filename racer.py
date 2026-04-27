@@ -2,26 +2,35 @@ import pygame
 import random
 import os
 
-# Window and road settings
+# ---------------------------------
+# Window and road constants
+# ---------------------------------
 WIDTH = 500
 HEIGHT = 700
+
 ROAD_LEFT = 70
 ROAD_RIGHT = 430
 ROAD_WIDTH = ROAD_RIGHT - ROAD_LEFT
+
 LANE_COUNT = 3
 LANE_WIDTH = ROAD_WIDTH // LANE_COUNT
-LANE_CENTERS = [ROAD_LEFT + LANE_WIDTH // 2 + i * LANE_WIDTH for i in range(LANE_COUNT)]
-FINISH_DISTANCE = 3000
+LANE_CENTERS = [
+    ROAD_LEFT + LANE_WIDTH // 2 + i * LANE_WIDTH
+    for i in range(LANE_COUNT)
+]
 
+FINISH_DISTANCE = 3200
+
+# ---------------------------------
 # Colors
+# ---------------------------------
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 GRAY = (120, 120, 120)
-DARK_GRAY = (60, 60, 60)
-GREEN = (30, 150, 30)
+GREEN = (25, 140, 25)
+YELLOW = (255, 215, 0)
 RED = (255, 0, 0)
 BLUE = (0, 0, 255)
-YELLOW = (255, 215, 0)
 ORANGE = (255, 140, 0)
 PURPLE = (160, 32, 240)
 CYAN = (0, 220, 255)
@@ -30,22 +39,14 @@ BRONZE = (205, 127, 50)
 SILVER = (180, 180, 180)
 
 
-def lane_from_x(x):
-    # Return nearest lane index from x coordinate
-    distances = [abs(x - c) for c in LANE_CENTERS]
-    return distances.index(min(distances))
-
-
-def safe_load_image(filename, size=None, fallback_color=BLUE):
-    # Load image if it exists, otherwise create colored fallback rectangle
+def load_image_or_fallback(filename, size, fallback_color):
+    """
+    Load an image if it exists.
+    If it does not exist, create a simple fallback rectangle sprite.
+    """
     if os.path.exists(filename):
         image = pygame.image.load(filename).convert_alpha()
-        if size is not None:
-            image = pygame.transform.scale(image, size)
-        return image
-
-    if size is None:
-        size = (50, 90)
+        return pygame.transform.scale(image, size)
 
     image = pygame.Surface(size, pygame.SRCALPHA)
     pygame.draw.rect(image, fallback_color, (0, 0, size[0], size[1]), border_radius=10)
@@ -53,56 +54,106 @@ def safe_load_image(filename, size=None, fallback_color=BLUE):
     return image
 
 
+def tint_car_image(image, car_color_name):
+    """
+    Apply a simple color tint to the player sprite.
+    This keeps the uploaded car image, while still letting Settings change car color.
+    """
+    if car_color_name == "blue":
+        return image.copy()
+
+    tint_colors = {
+        "red": (255, 80, 80),
+        "green": (80, 220, 80),
+        "yellow": (255, 230, 80)
+    }
+
+    result = image.copy()
+    tint = tint_colors.get(car_color_name, (255, 255, 255))
+
+    overlay = pygame.Surface(result.get_size(), pygame.SRCALPHA)
+    overlay.fill((tint[0], tint[1], tint[2], 45))
+    result.blit(overlay, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+    return result
+
+
+def lane_from_x(x):
+    """
+    Return the lane index closest to x coordinate.
+    """
+    distances = [abs(x - center) for center in LANE_CENTERS]
+    return distances.index(min(distances))
+
+
+def choose_safe_lane(player_lane, allow_same_lane_probability=0.2):
+    """
+    Most of the time do not spawn directly in the player's lane.
+    Sometimes allow it, so the game still has tension.
+    """
+    lanes = [0, 1, 2]
+
+    if random.random() > allow_same_lane_probability:
+        if player_lane in lanes:
+            lanes.remove(player_lane)
+
+    return random.choice(lanes)
+
+
+# ---------------------------------
+# Sprite classes
+# ---------------------------------
 class Player(pygame.sprite.Sprite):
     def __init__(self, car_color):
         super().__init__()
 
-        color_map = {
-            "blue": BLUE,
-            "red": RED,
-            "green": (0, 180, 0),
-            "yellow": YELLOW
-        }
-        fallback_color = color_map.get(car_color, BLUE)
-
-        self.image = safe_load_image("Player.png", (50, 90), fallback_color)
-        self.rect = self.image.get_rect(center=(LANE_CENTERS[1], 600))
+        base_image = load_image_or_fallback("Player.png", (50, 90), BLUE)
+        self.image = tint_car_image(base_image, car_color)
+        self.rect = self.image.get_rect(center=(LANE_CENTERS[1], 595))
 
     def move(self):
+        """
+        Player movement stays like earlier racer versions:
+        left/right on the road only.
+        """
         pressed_keys = pygame.key.get_pressed()
 
-        if self.rect.left > ROAD_LEFT and pressed_keys[pygame.K_LEFT]:
+        if pressed_keys[pygame.K_LEFT] and self.rect.left > ROAD_LEFT:
             self.rect.move_ip(-6, 0)
 
-        if self.rect.right < ROAD_RIGHT and pressed_keys[pygame.K_RIGHT]:
+        if pressed_keys[pygame.K_RIGHT] and self.rect.right < ROAD_RIGHT:
             self.rect.move_ip(6, 0)
 
 
 class TrafficCar(pygame.sprite.Sprite):
-    def __init__(self, player_lane, speed):
+    def __init__(self, player_lane):
         super().__init__()
-        self.image = safe_load_image("Enemy.png", (50, 90), RED)
+
+        self.image = load_image_or_fallback("Enemy.png", (50, 90), RED)
         self.rect = self.image.get_rect()
-        self.speed = speed
-        self.spawn(player_lane)
 
-    def spawn(self, player_lane):
-        # Safe spawn: avoid placing directly in player lane most of the time
-        lane_choices = [0, 1, 2]
-        if player_lane in lane_choices and len(lane_choices) > 1:
-            lane_choices.remove(player_lane)
+        lane = choose_safe_lane(player_lane, 0.15)
+        self.rect.center = (LANE_CENTERS[lane], random.randint(-600, -120))
 
-        lane = random.choice(lane_choices if random.random() < 0.8 else [0, 1, 2])
-        self.rect.center = (LANE_CENTERS[lane], random.randint(-500, -120))
+        # Small per-car speed variation
+        self.extra_speed = random.randint(0, 2)
 
     def move(self, world_speed):
-        self.rect.move_ip(0, world_speed + self.speed)
+        self.rect.move_ip(0, world_speed + self.extra_speed)
 
 
 class Coin(pygame.sprite.Sprite):
     def __init__(self):
         super().__init__()
+
         self.weight = random.choice([1, 2, 3])
+        self.make_image()
+        self.spawn()
+
+    def make_image(self):
+        """
+        Weighted coins from Practice 11 are kept.
+        Bronze = 1, Silver = 2, Gold = 3.
+        """
         self.image = pygame.Surface((28, 28), pygame.SRCALPHA)
 
         color = BRONZE
@@ -113,45 +164,41 @@ class Coin(pygame.sprite.Sprite):
 
         pygame.draw.circle(self.image, color, (14, 14), 14)
         pygame.draw.circle(self.image, BLACK, (14, 14), 14, 2)
-
         self.rect = self.image.get_rect()
-        self.spawn()
 
     def spawn(self):
         lane = random.randint(0, 2)
-        self.rect.center = (LANE_CENTERS[lane], random.randint(-600, -50))
+        self.rect.center = (LANE_CENTERS[lane], random.randint(-700, -50))
+
+    def respawn(self):
+        self.weight = random.choice([1, 2, 3])
+        self.make_image()
+        self.spawn()
 
     def move(self, world_speed):
         self.rect.move_ip(0, world_speed)
 
 
-class Obstacle(pygame.sprite.Sprite):
-    def __init__(self, kind, player_lane):
+class Hazard(pygame.sprite.Sprite):
+    def __init__(self, hazard_type, lane, y_pos):
         super().__init__()
-        self.kind = kind
-        self.image = pygame.Surface((70, 40), pygame.SRCALPHA)
+        self.hazard_type = hazard_type
 
-        if kind == "barrier":
-            pygame.draw.rect(self.image, ORANGE, (0, 0, 70, 40))
-            pygame.draw.rect(self.image, BLACK, (0, 0, 70, 40), 2)
-        elif kind == "oil":
-            self.image = pygame.Surface((50, 50), pygame.SRCALPHA)
-            pygame.draw.circle(self.image, BLACK, (25, 25), 22)
-        elif kind == "pothole":
-            self.image = pygame.Surface((52, 52), pygame.SRCALPHA)
-            pygame.draw.circle(self.image, BROWN, (26, 26), 22)
-            pygame.draw.circle(self.image, BLACK, (26, 26), 22, 2)
+        if hazard_type == "barrier":
+            self.image = pygame.Surface((90, 32), pygame.SRCALPHA)
+            pygame.draw.rect(self.image, ORANGE, (0, 0, 90, 32), border_radius=5)
+            pygame.draw.rect(self.image, BLACK, (0, 0, 90, 32), 2, border_radius=5)
 
-        self.rect = self.image.get_rect()
-        self.spawn(player_lane)
+        elif hazard_type == "oil":
+            self.image = pygame.Surface((46, 46), pygame.SRCALPHA)
+            pygame.draw.circle(self.image, BLACK, (23, 23), 21)
 
-    def spawn(self, player_lane):
-        lane_choices = [0, 1, 2]
-        if player_lane in lane_choices and len(lane_choices) > 1:
-            lane_choices.remove(player_lane)
+        else:  # pothole
+            self.image = pygame.Surface((48, 48), pygame.SRCALPHA)
+            pygame.draw.circle(self.image, BROWN, (24, 24), 20)
+            pygame.draw.circle(self.image, BLACK, (24, 24), 20, 2)
 
-        lane = random.choice(lane_choices if random.random() < 0.75 else [0, 1, 2])
-        self.rect.center = (LANE_CENTERS[lane], random.randint(-700, -100))
+        self.rect = self.image.get_rect(center=(LANE_CENTERS[lane], y_pos))
 
     def move(self, world_speed):
         self.rect.move_ip(0, world_speed)
@@ -164,26 +211,27 @@ class RoadEvent(pygame.sprite.Sprite):
         self.dx = 0
 
         if event_type == "moving_barrier":
-            self.image = pygame.Surface((100, 25))
+            self.image = pygame.Surface((100, 22))
             self.image.fill(ORANGE)
             self.rect = self.image.get_rect(center=(WIDTH // 2, -80))
             self.dx = random.choice([-3, 3])
 
         elif event_type == "speed_bump":
-            self.image = pygame.Surface((LANE_WIDTH - 10, 16))
-            self.image.fill(BROWN)
             lane = random.randint(0, 2)
+            self.image = pygame.Surface((LANE_WIDTH - 16, 14))
+            self.image.fill(BROWN)
             self.rect = self.image.get_rect(center=(LANE_CENTERS[lane], -80))
 
         else:  # nitro_strip
-            self.image = pygame.Surface((LANE_WIDTH - 20, 16))
-            self.image.fill(CYAN)
             lane = random.randint(0, 2)
+            self.image = pygame.Surface((LANE_WIDTH - 16, 14))
+            self.image.fill(CYAN)
             self.rect = self.image.get_rect(center=(LANE_CENTERS[lane], -80))
 
     def move(self, world_speed):
         self.rect.move_ip(0, world_speed)
 
+        # Dynamic horizontal movement for moving barrier
         if self.event_type == "moving_barrier":
             self.rect.move_ip(self.dx, 0)
 
@@ -192,27 +240,26 @@ class RoadEvent(pygame.sprite.Sprite):
 
 
 class PowerUp(pygame.sprite.Sprite):
-    def __init__(self, kind):
+    def __init__(self, power_type):
         super().__init__()
-        self.kind = kind
+        self.power_type = power_type
         self.spawn_time = pygame.time.get_ticks()
-        self.timeout = 5000
+        self.timeout = 8000
 
         self.image = pygame.Surface((34, 34), pygame.SRCALPHA)
 
-        if kind == "nitro":
+        if power_type == "nitro":
             color = CYAN
-        elif kind == "shield":
+        elif power_type == "shield":
             color = PURPLE
-        else:
-            color = GREEN
+        else:  # repair
+            color = (0, 200, 0)
 
         pygame.draw.circle(self.image, color, (17, 17), 17)
         pygame.draw.circle(self.image, BLACK, (17, 17), 17, 2)
 
-        self.rect = self.image.get_rect()
         lane = random.randint(0, 2)
-        self.rect.center = (LANE_CENTERS[lane], random.randint(-900, -200))
+        self.rect = self.image.get_rect(center=(LANE_CENTERS[lane], random.randint(-900, -250)))
 
     def move(self, world_speed):
         self.rect.move_ip(0, world_speed)
@@ -221,6 +268,9 @@ class PowerUp(pygame.sprite.Sprite):
         return pygame.time.get_ticks() - self.spawn_time > self.timeout
 
 
+# ---------------------------------
+# Main game class
+# ---------------------------------
 class RacerGame:
     def __init__(self, screen, username, settings):
         self.screen = screen
@@ -231,62 +281,66 @@ class RacerGame:
         self.font = pygame.font.SysFont("Verdana", 20)
         self.small_font = pygame.font.SysFont("Verdana", 16)
 
-        # Base speed depends on settings
-        difficulty_speed = {
-            "easy": 5,
-            "normal": 7,
-            "hard": 9
+        # Difficulty controls the starting speed and spawn frequency
+        difficulty_data = {
+            "easy": {"speed": 5, "traffic": 1800, "hazard": 2100},
+            "normal": {"speed": 7, "traffic": 1300, "hazard": 1700},
+            "hard": {"speed": 9, "traffic": 950, "hazard": 1300}
         }
-        self.base_speed = difficulty_speed[settings["difficulty"]]
-        self.speed = self.base_speed
 
-        self.player = Player(settings["car_color"])
-
-        # Sprite groups
-        self.traffic = pygame.sprite.Group()
-        self.coins = pygame.sprite.Group()
-        self.obstacles = pygame.sprite.Group()
-        self.road_events = pygame.sprite.Group()
-        self.powerups = pygame.sprite.Group()
-
-        # Old base values kept from Practice 10–11
-        self.coin_value_total = 0
-
-        # New TSIS 3 values
-        self.distance = 0
-        self.bonus_score = 0
-        self.road_scroll = 0
-        self.won = False
-
-        # Active power-up
-        self.active_powerup = None
-        self.powerup_end_time = 0
-        self.shield_ready = False
-
-        # Spawn timers
-        now = pygame.time.get_ticks()
-        self.last_traffic_spawn = now
-        self.last_obstacle_spawn = now
-        self.last_event_spawn = now
-        self.last_coin_spawn = now
-        self.last_powerup_spawn = now
-
-        # Spawn intervals
-        if settings["difficulty"] == "easy":
-            self.traffic_interval = 1800
-            self.obstacle_interval = 2200
-        elif settings["difficulty"] == "hard":
-            self.traffic_interval = 950
-            self.obstacle_interval = 1400
-        else:
-            self.traffic_interval = 1300
-            self.obstacle_interval = 1800
+        self.base_speed = difficulty_data[settings["difficulty"]]["speed"]
+        self.traffic_interval = difficulty_data[settings["difficulty"]]["traffic"]
+        self.hazard_interval = difficulty_data[settings["difficulty"]]["hazard"]
 
         self.event_interval = 3000
         self.coin_interval = 1200
         self.powerup_interval = 6500
 
-        # Sound
+        self.player = Player(settings["car_color"])
+
+        # Groups
+        self.traffic = pygame.sprite.Group()
+        self.coins = pygame.sprite.Group()
+        self.hazards = pygame.sprite.Group()
+        self.events = pygame.sprite.Group()
+        self.powerups = pygame.sprite.Group()
+
+        # Base racer values
+        self.coin_value_total = 0
+        self.distance = 0
+        self.bonus_score = 0
+        self.won = False
+
+        # Road animation
+        self.road_scroll = 0
+
+        # Power-up state
+        self.active_powerup = None
+        self.powerup_end_time = 0
+        self.shield_ready = False
+
+        # Speed bump slowdown timer
+        self.slow_until = 0
+
+        # Spawn timers
+        now = pygame.time.get_ticks()
+        self.last_traffic_spawn = now
+        self.last_hazard_spawn = now
+        self.last_event_spawn = now
+        self.last_coin_spawn = now
+        self.last_powerup_spawn = now
+
+        # Keep some weighted coins active from the start
+        for _ in range(3):
+            self.coins.add(Coin())
+
+        # Optional background image
+        self.background_image = None
+        if os.path.exists("AnimatedStreet.png"):
+            img = pygame.image.load("AnimatedStreet.png").convert()
+            self.background_image = pygame.transform.scale(img, (WIDTH, HEIGHT))
+
+        # Optional sounds
         self.crash_sound = None
         if settings["sound"] and os.path.exists("crash.wav"):
             try:
@@ -294,116 +348,233 @@ class RacerGame:
             except:
                 self.crash_sound = None
 
+        # Optional background music
+        if settings["sound"] and os.path.exists("background.wav"):
+            try:
+                pygame.mixer.music.load("background.wav")
+                pygame.mixer.music.play(-1)
+            except:
+                pass
+
+    def stop_audio(self):
+        """
+        Stop music when leaving the game.
+        """
+        try:
+            pygame.mixer.music.stop()
+        except:
+            pass
+
+    def current_world_speed(self):
+        """
+        Compute final speed with active effects.
+        """
+        speed = self.base_speed
+
+        if self.active_powerup == "Nitro":
+            speed += 4
+
+        if pygame.time.get_ticks() < self.slow_until:
+            speed = max(4, speed - 2)
+
+        return speed
+
     def current_score(self):
-        # Score = weighted coins + distance + bonuses
+        """
+        Score combines:
+        - weighted coins
+        - distance
+        - bonuses from power-ups and events
+        """
         return self.coin_value_total * 20 + self.distance // 5 + self.bonus_score
 
     def draw_road(self):
-        self.screen.fill(GREEN)
+        """
+        Draw moving road background and lane markings.
+        """
+        if self.background_image is not None:
+            self.screen.blit(self.background_image, (0, 0))
+        else:
+            self.screen.fill(GREEN)
+
         pygame.draw.rect(self.screen, GRAY, (ROAD_LEFT, 0, ROAD_WIDTH, HEIGHT))
 
-        # Scrolling lane markings
-        self.road_scroll += self.speed
+        self.road_scroll += self.current_world_speed()
         if self.road_scroll >= 80:
             self.road_scroll = 0
 
         for y in range(-80, HEIGHT, 80):
-            pygame.draw.rect(self.screen, WHITE, (ROAD_LEFT + LANE_WIDTH - 5, y + self.road_scroll, 10, 40))
-            pygame.draw.rect(self.screen, WHITE, (ROAD_LEFT + 2 * LANE_WIDTH - 5, y + self.road_scroll, 10, 40))
+            pygame.draw.rect(
+                self.screen,
+                WHITE,
+                (ROAD_LEFT + LANE_WIDTH - 5, y + self.road_scroll, 10, 40)
+            )
+            pygame.draw.rect(
+                self.screen,
+                WHITE,
+                (ROAD_LEFT + 2 * LANE_WIDTH - 5, y + self.road_scroll, 10, 40)
+            )
 
-    def spawn_entities(self):
-        now = pygame.time.get_ticks()
+    def spawn_traffic(self):
+        """
+        Spawn traffic cars with safe spawn logic.
+        """
         player_lane = lane_from_x(self.player.rect.centerx)
+        self.traffic.add(TrafficCar(player_lane))
+
+    def spawn_hazard_pattern(self):
+        """
+        Spawn lane hazards while leaving at least one safe path.
+        This gives the player a choice of lanes.
+        """
+        blocked_lane_count = random.choice([1, 2])
+        blocked_lanes = random.sample([0, 1, 2], blocked_lane_count)
+        y_pos = random.randint(-750, -120)
+
+        for lane in blocked_lanes:
+            kind = random.choice(["barrier", "oil", "pothole"])
+            self.hazards.add(Hazard(kind, lane, y_pos))
+
+    def spawn_event(self):
+        """
+        Spawn a dynamic road event.
+        """
+        event_type = random.choice(["moving_barrier", "speed_bump", "nitro_strip"])
+        self.events.add(RoadEvent(event_type))
+
+    def spawn_coin_if_needed(self):
+        """
+        Keep several weighted coins on the road.
+        """
+        if len(self.coins) < 3:
+            self.coins.add(Coin())
+
+    def spawn_powerup(self):
+        """
+        Only one collectible power-up on the field at a time.
+        """
+        if len(self.powerups) == 0:
+            kind = random.choice(["nitro", "shield", "repair"])
+            self.powerups.add(PowerUp(kind))
+
+    def handle_spawns(self):
+        now = pygame.time.get_ticks()
 
         if now - self.last_traffic_spawn >= self.traffic_interval:
-            traffic_speed = random.randint(0, 3)
-            self.traffic.add(TrafficCar(player_lane, traffic_speed))
+            self.spawn_traffic()
             self.last_traffic_spawn = now
 
-        if now - self.last_obstacle_spawn >= self.obstacle_interval:
-            kind = random.choice(["barrier", "oil", "pothole"])
-            self.obstacles.add(Obstacle(kind, player_lane))
-            self.last_obstacle_spawn = now
+        if now - self.last_hazard_spawn >= self.hazard_interval:
+            self.spawn_hazard_pattern()
+            self.last_hazard_spawn = now
 
         if now - self.last_event_spawn >= self.event_interval:
-            event_type = random.choice(["moving_barrier", "speed_bump", "nitro_strip"])
-            self.road_events.add(RoadEvent(event_type))
+            self.spawn_event()
             self.last_event_spawn = now
 
         if now - self.last_coin_spawn >= self.coin_interval:
-            self.coins.add(Coin())
+            self.spawn_coin_if_needed()
             self.last_coin_spawn = now
 
         if now - self.last_powerup_spawn >= self.powerup_interval:
-            kind = random.choice(["nitro", "shield", "repair"])
-            self.powerups.add(PowerUp(kind))
+            self.spawn_powerup()
             self.last_powerup_spawn = now
 
     def update_groups(self):
-        for group in [self.traffic, self.coins, self.obstacles, self.road_events, self.powerups]:
-            for sprite in list(group):
-                sprite.move(self.speed)
+        """
+        Move all objects and remove those that go off screen.
+        """
+        speed = self.current_world_speed()
 
-                # Remove off-screen objects
-                if sprite.rect.top > HEIGHT + 60:
+        for group in [self.traffic, self.coins, self.hazards, self.events, self.powerups]:
+            for sprite in list(group):
+                sprite.move(speed)
+
+                if sprite.rect.top > HEIGHT + 70:
                     group.remove(sprite)
 
-        # Remove expired powerups
         for p in list(self.powerups):
             if p.expired():
                 self.powerups.remove(p)
 
-    def apply_nitro(self):
+    def clear_active_powerup(self):
+        """
+        Reset currently active power-up effect.
+        """
+        self.active_powerup = None
+        self.powerup_end_time = 0
+        self.shield_ready = False
+
+    def activate_nitro(self):
+        self.clear_active_powerup()
         self.active_powerup = "Nitro"
         self.powerup_end_time = pygame.time.get_ticks() + 4000
-        self.speed = self.base_speed + 4
+        self.bonus_score += 30
 
-    def apply_shield(self):
+    def activate_shield(self):
+        self.clear_active_powerup()
         self.active_powerup = "Shield"
-        self.powerup_end_time = 0
         self.shield_ready = True
-        self.speed = self.base_speed
+        self.bonus_score += 30
 
-    def clear_active_powerup(self):
-        self.active_powerup = None
-        self.powerup_end_time = 0
-        self.shield_ready = False
-        self.speed = self.base_speed
-
-    def apply_repair(self):
-        # Instant effect:
-        # remove one obstacle in player lane or restore speed to base
+    def use_repair(self):
+        """
+        Instant Repair effect:
+        clears one nearest hazard or traffic object in the player's lane.
+        If nothing is found, it restores road speed.
+        """
         player_lane = lane_from_x(self.player.rect.centerx)
+        player_y = self.player.rect.centery
 
-        removed = False
-        for obs in list(self.obstacles):
-            if lane_from_x(obs.rect.centerx) == player_lane:
-                self.obstacles.remove(obs)
-                removed = True
-                break
+        candidates = []
 
-        if not removed:
-            self.speed = self.base_speed
+        for sprite in self.hazards:
+            if lane_from_x(sprite.rect.centerx) == player_lane and sprite.rect.centery < player_y:
+                candidates.append(sprite)
+
+        for sprite in self.traffic:
+            if lane_from_x(sprite.rect.centerx) == player_lane and sprite.rect.centery < player_y:
+                candidates.append(sprite)
+
+        if len(candidates) > 0:
+            nearest = min(candidates, key=lambda s: abs(player_y - s.rect.centery))
+
+            if nearest in self.hazards:
+                self.hazards.remove(nearest)
+            elif nearest in self.traffic:
+                self.traffic.remove(nearest)
+        else:
+            # If nothing to clear, just remove slowdown
+            self.slow_until = 0
 
         self.bonus_score += 40
-        self.active_powerup = None
-        self.powerup_end_time = 0
-        self.shield_ready = False
+        self.clear_active_powerup()
 
     def handle_powerup_timeout(self):
+        """
+        End Nitro after time expires.
+        Shield stays until triggered.
+        """
         if self.active_powerup == "Nitro":
             if pygame.time.get_ticks() >= self.powerup_end_time:
                 self.clear_active_powerup()
 
     def use_shield_if_available(self):
+        """
+        Consume shield on first collision.
+        """
         if self.shield_ready:
             self.clear_active_powerup()
-            self.bonus_score += 25
+            self.bonus_score += 20
             return True
         return False
 
     def handle_collisions(self):
-        # Traffic collision ends run unless shield
+        """
+        Handle all gameplay collisions.
+        Return False if run should end.
+        """
+        # Traffic collision
         traffic_hit = pygame.sprite.spritecollideany(self.player, self.traffic)
         if traffic_hit:
             if self.use_shield_if_available():
@@ -411,120 +582,124 @@ class RacerGame:
             else:
                 return False
 
-        # Coins
-        collected_coins = pygame.sprite.spritecollide(self.player, self.coins, True)
-        for coin in collected_coins:
+        # Coin collection
+        collected = pygame.sprite.spritecollide(self.player, self.coins, False)
+        for coin in collected:
             self.coin_value_total += coin.weight
+            coin.respawn()
 
-            # Old Practice 11 idea: increase speed after earning N coins
+            # Keep old Practice 11 rule:
+            # enemy/world speed increases after N earned coins
             if self.coin_value_total % 5 == 0:
                 self.base_speed += 1
-                if self.active_powerup != "Nitro":
-                    self.speed = self.base_speed
 
-        # Obstacles
-        collided_obstacles = pygame.sprite.spritecollide(self.player, self.obstacles, False)
-        for obs in collided_obstacles:
-            if obs.kind == "barrier":
+        # Hazard collisions
+        collided_hazards = pygame.sprite.spritecollide(self.player, self.hazards, False)
+        for hazard in collided_hazards:
+            if hazard.hazard_type == "barrier":
                 if self.use_shield_if_available():
-                    self.obstacles.remove(obs)
+                    self.hazards.remove(hazard)
                 else:
                     return False
 
-            elif obs.kind == "oil":
-                # Oil spill pushes car sideways
-                self.player.rect.x += random.choice([-50, 50])
+            elif hazard.hazard_type == "oil":
+                # Oil spill shifts the car sideways
+                self.player.rect.x += random.choice([-55, 55])
+
                 if self.player.rect.left < ROAD_LEFT:
                     self.player.rect.left = ROAD_LEFT
                 if self.player.rect.right > ROAD_RIGHT:
                     self.player.rect.right = ROAD_RIGHT
-                self.obstacles.remove(obs)
 
-            elif obs.kind == "pothole":
-                # Pothole slows temporarily
-                self.speed = max(3, self.speed - 2)
-                self.obstacles.remove(obs)
+                self.hazards.remove(hazard)
 
-        # Road events
-        collided_events = pygame.sprite.spritecollide(self.player, self.road_events, False)
-        for ev in collided_events:
-            if ev.event_type == "moving_barrier":
+            elif hazard.hazard_type == "pothole":
+                # Pothole temporarily slows the road
+                self.slow_until = pygame.time.get_ticks() + 1500
+                self.hazards.remove(hazard)
+
+        # Dynamic road events
+        collided_events = pygame.sprite.spritecollide(self.player, self.events, False)
+        for event in collided_events:
+            if event.event_type == "moving_barrier":
                 if self.use_shield_if_available():
-                    self.road_events.remove(ev)
+                    self.events.remove(event)
                 else:
                     return False
 
-            elif ev.event_type == "speed_bump":
-                self.speed = max(3, self.speed - 1)
-                self.road_events.remove(ev)
+            elif event.event_type == "speed_bump":
+                self.slow_until = pygame.time.get_ticks() + 1200
+                self.events.remove(event)
 
-            elif ev.event_type == "nitro_strip":
-                self.clear_active_powerup()
-                self.apply_nitro()
-                self.road_events.remove(ev)
+            elif event.event_type == "nitro_strip":
+                # Nitro strip gives temporary speed boost
+                self.activate_nitro()
+                self.events.remove(event)
 
-        # Power-ups
+        # Collectible power-ups
         collected_powerups = pygame.sprite.spritecollide(self.player, self.powerups, True)
         for power in collected_powerups:
-            # Only one power-up active at a time
-            self.clear_active_powerup()
-
-            if power.kind == "nitro":
-                self.apply_nitro()
-                self.bonus_score += 30
-
-            elif power.kind == "shield":
-                self.apply_shield()
-                self.bonus_score += 30
-
-            elif power.kind == "repair":
-                self.apply_repair()
+            if power.power_type == "nitro":
+                self.activate_nitro()
+            elif power.power_type == "shield":
+                self.activate_shield()
+            elif power.power_type == "repair":
+                self.use_repair()
 
         return True
 
     def scale_difficulty(self):
-        # Increase traffic and obstacles as distance grows
-        if self.distance > 0 and self.distance % 500 == 0:
-            self.traffic_interval = max(600, self.traffic_interval - 40)
-            self.obstacle_interval = max(900, self.obstacle_interval - 35)
+        """
+        As the player progresses, traffic and hazard frequency increase.
+        """
+        if self.distance > 0 and self.distance % 600 == 0:
+            self.traffic_interval = max(600, self.traffic_interval - 35)
+            self.hazard_interval = max(900, self.hazard_interval - 30)
 
     def draw_hud(self):
+        """
+        Draw score, coins, distance, remaining distance, checkpoint,
+        and active power-up information.
+        """
         remaining = max(0, FINISH_DISTANCE - self.distance)
-        checkpoint = min(3, self.distance // 1000 + 1)
+        checkpoint = min(4, self.distance // 800 + 1)
 
-        lines = [
+        info_lines = [
             f"Player: {self.username}",
             f"Score: {self.current_score()}",
             f"Coins: {self.coin_value_total}",
             f"Distance: {self.distance}",
             f"Remaining: {remaining}",
-            f"Checkpoint: {checkpoint}/3"
+            f"Checkpoint: {checkpoint}/4"
         ]
 
         y = 10
-        for line in lines:
-            surf = self.font.render(line, True, BLACK)
-            self.screen.blit(surf, (10, y))
+        for line in info_lines:
+            surface = self.font.render(line, True, BLACK)
+            self.screen.blit(surface, (10, y))
             y += 24
 
         # Active power-up display
         power_text = "Power-up: None"
         if self.active_powerup == "Nitro":
-            seconds = max(0, (self.powerup_end_time - pygame.time.get_ticks()) // 1000 + 1)
-            power_text = f"Power-up: Nitro ({seconds}s)"
+            secs = max(0, (self.powerup_end_time - pygame.time.get_ticks()) // 1000 + 1)
+            power_text = f"Power-up: Nitro ({secs}s)"
         elif self.active_powerup == "Shield":
             power_text = "Power-up: Shield"
 
-        power_surf = self.font.render(power_text, True, BLACK)
-        self.screen.blit(power_surf, (250, 10))
+        power_surface = self.font.render(power_text, True, BLACK)
+        self.screen.blit(power_surface, (265, 10))
 
-        help_surf = self.small_font.render("Left / Right arrows to drive", True, BLACK)
-        self.screen.blit(help_surf, (250, 38))
+        help_surface = self.small_font.render("Use Left / Right arrows", True, BLACK)
+        self.screen.blit(help_surface, (265, 37))
 
     def draw_all(self):
+        """
+        Draw the full scene every frame.
+        """
         self.draw_road()
 
-        for group in [self.coins, self.powerups, self.road_events, self.obstacles, self.traffic]:
+        for group in [self.coins, self.powerups, self.events, self.hazards, self.traffic]:
             for sprite in group:
                 self.screen.blit(sprite.image, sprite.rect)
 
@@ -532,38 +707,51 @@ class RacerGame:
         self.draw_hud()
 
     def run(self):
+        """
+        Main gameplay loop.
+        Returns result data for game over / leaderboard.
+        """
         running = True
 
         while running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
+                    self.stop_audio()
                     pygame.quit()
                     raise SystemExit
 
+            # Player movement
             self.player.move()
-            self.spawn_entities()
+
+            # Spawns and updates
+            self.handle_spawns()
             self.update_groups()
             self.handle_powerup_timeout()
 
+            # Collisions
             if not self.handle_collisions():
                 if self.crash_sound is not None:
                     self.crash_sound.play()
-                    pygame.time.delay(300)
+                    pygame.time.delay(250)
+
                 running = False
 
             # Progress
-            self.distance += self.speed // 2
+            self.distance += self.current_world_speed() // 2
             self.scale_difficulty()
 
-            # Finish line
+            # Finish condition
             if self.distance >= FINISH_DISTANCE:
                 self.won = True
                 self.bonus_score += 200
                 running = False
 
+            # Draw frame
             self.draw_all()
             pygame.display.update()
             self.clock.tick(60)
+
+        self.stop_audio()
 
         return {
             "name": self.username,
